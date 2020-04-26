@@ -35,17 +35,16 @@
  * provide your team information in the following struct.
  ********************************************************/
 team_t team = {
-  /* Team name */
-  "",
-  /* First member's full name */
-  "",
-  /* First member's email address */
-  "",
-  /* Second member's full name (leave blank if none) */
-  "",
-  /* Second member's email address (leave blank if none) */
-  ""
-};
+    /* Team name */
+    "",
+    /* First member's full name */
+    "Kyle Pfromer",
+    /* First member's email address */
+    "kyle.pfromer@colorado.edu",
+    /* Second member's full name (leave blank if none) */
+    "Saurabh Totey",
+    /* Second member's email address (leave blank if none) */
+    "saurabh.totey@colorado.edu"};
 
 /////////////////////////////////////////////////////////////////////////////
 // Constants and macros
@@ -55,12 +54,13 @@ team_t team = {
 // make debugging code easier.
 //
 /////////////////////////////////////////////////////////////////////////////
-#define WSIZE       4       /* word size (bytes) */  
-#define DSIZE       8       /* doubleword size (bytes) */
-#define CHUNKSIZE  (1<<12)  /* initial heap size (bytes) */
-#define OVERHEAD    8       /* overhead of header and footer (bytes) */
+#define WSIZE 4             /* word size (bytes) */
+#define DSIZE 8             /* doubleword size (bytes) */
+#define CHUNKSIZE (1 << 12) /* initial heap size (bytes) */
+#define OVERHEAD 8          /* overhead of header and footer (bytes) */
 
-static inline int MAX(int x, int y) {
+static inline int MAX(int x, int y)
+{
   return x > y ? x : y;
 }
 
@@ -69,15 +69,16 @@ static inline int MAX(int x, int y) {
 // We mask of the "alloc" field to insure only
 // the lower bit is used
 //
-static inline uint32_t PACK(uint32_t size, int alloc) {
+static inline uint32_t PACK(uint32_t size, int alloc)
+{
   return ((size) | (alloc & 0x1));
 }
 
 //
 // Read and write a word at address p
 //
-static inline uint32_t GET(void *p) { return  *(uint32_t *)p; }
-static inline void PUT( void *p, uint32_t val)
+static inline uint32_t GET(void *p) { return *(uint32_t *)p; }
+static inline void PUT(void *p, uint32_t val)
 {
   *((uint32_t *)p) = val;
 }
@@ -85,34 +86,40 @@ static inline void PUT( void *p, uint32_t val)
 //
 // Read the size and allocated fields from address p
 //
-static inline uint32_t GET_SIZE( void *p )  { 
+static inline uint32_t GET_SIZE(void *p)
+{
   return GET(p) & ~0x7;
 }
 
-static inline int GET_ALLOC( void *p  ) {
+static inline int GET_ALLOC(void *p)
+{
   return GET(p) & 0x1;
 }
 
 //
 // Given block ptr bp, compute address of its header and footer
 //
-static inline void *HDRP(void *bp) {
+static inline void *HDRP(void *bp)
+{
 
-  return ( (char *)bp) - WSIZE;
+  return ((char *)bp) - WSIZE;
 }
-static inline void *FTRP(void *bp) {
+static inline void *FTRP(void *bp)
+{
   return ((char *)(bp) + GET_SIZE(HDRP(bp)) - DSIZE);
 }
 
 //
 // Given block ptr bp, compute address of next and previous blocks
 //
-static inline void *NEXT_BLKP(void *bp) {
-  return  ((char *)(bp) + GET_SIZE(((char *)(bp) - WSIZE)));
+static inline void *NEXT_BLKP(void *bp)
+{
+  return ((char *)(bp) + GET_SIZE(((char *)(bp)-WSIZE)));
 }
 
-static inline void* PREV_BLKP(void *bp){
-  return  ((char *)(bp) - GET_SIZE(((char *)(bp) - DSIZE)));
+static inline void *PREV_BLKP(void *bp)
+{
+  return ((char *)(bp)-GET_SIZE(((char *)(bp)-DSIZE)));
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -120,7 +127,7 @@ static inline void* PREV_BLKP(void *bp){
 // Global Variables
 //
 
-static char *heap_listp;  /* pointer to first block */  
+static char *heap_listp; /* pointer to first block */
 
 //
 // function prototypes for internal helper routines
@@ -129,13 +136,13 @@ static void *extend_heap(uint32_t words);
 static void place(void *bp, uint32_t asize);
 static void *find_fit(uint32_t asize);
 static void *coalesce(void *bp);
-static void printblock(void *bp); 
+static void printblock(void *bp);
 static void checkblock(void *bp);
 
 //
-// mm_init - Initialize the memory manager 
+// mm_init - Initialize the memory manager
 //
-int mm_init(void) 
+int mm_init(void)
 {
   //
   // You need to provide this
@@ -143,11 +150,10 @@ int mm_init(void)
   return 0;
 }
 
-
 //
 // extend_heap - Extend heap with free block and return its block pointer
 //
-static void *extend_heap(uint32_t words) 
+static void *extend_heap(uint32_t words)
 {
   //
   // You need to provide this
@@ -155,19 +161,18 @@ static void *extend_heap(uint32_t words)
   return NULL;
 }
 
-
 //
 // Practice problem 9.8
 //
-// find_fit - Find a fit for a block with asize bytes 
+// find_fit - Find a fit for a block with asize bytes
 //
 static void *find_fit(uint32_t asize)
 {
   return NULL; /* no fit */
 }
 
-// 
-// mm_free - Free a block 
+//
+// mm_free - Free a block
 //
 void mm_free(void *bp)
 {
@@ -179,33 +184,32 @@ void mm_free(void *bp)
 //
 // coalesce - boundary tag coalescing. Return ptr to coalesced block
 //
-static void *coalesce(void *bp) 
+static void *coalesce(void *bp)
 {
   return bp;
 }
 
 //
-// mm_malloc - Allocate a block with at least size bytes of payload 
+// mm_malloc - Allocate a block with at least size bytes of payload
 //
-void *mm_malloc(uint32_t size) 
+void *mm_malloc(uint32_t size)
 {
   //
   // You need to provide this
   //
   return NULL;
-} 
+}
 
 //
 //
 // Practice problem 9.9
 //
-// place - Place block of asize bytes at start of free block bp 
+// place - Place block of asize bytes at start of free block bp
 //         and split if remainder would be at least minimum block size
 //
 static void place(void *bp, uint32_t asize)
 {
 }
-
 
 //
 // mm_realloc -- implemented for you
@@ -216,12 +220,14 @@ void *mm_realloc(void *ptr, uint32_t size)
   uint32_t copySize;
 
   newp = mm_malloc(size);
-  if (newp == NULL) {
+  if (newp == NULL)
+  {
     printf("ERROR: mm_malloc failed in mm_realloc\n");
     exit(1);
   }
   copySize = GET_SIZE(HDRP(ptr));
-  if (size < copySize) {
+  if (size < copySize)
+  {
     copySize = size;
   }
   memcpy(newp, ptr, copySize);
@@ -230,9 +236,9 @@ void *mm_realloc(void *ptr, uint32_t size)
 }
 
 //
-// mm_checkheap - Check the heap for consistency 
+// mm_checkheap - Check the heap for consistency
 //
-void mm_checkheap(int verbose) 
+void mm_checkheap(int verbose)
 {
   //
   // This provided implementation assumes you're using the structure
@@ -240,59 +246,67 @@ void mm_checkheap(int verbose)
   // and provide your own mm_checkheap
   //
   void *bp = heap_listp;
-  
-  if (verbose) {
+
+  if (verbose)
+  {
     printf("Heap (%p):\n", heap_listp);
   }
 
-  if ((GET_SIZE(HDRP(heap_listp)) != DSIZE) || !GET_ALLOC(HDRP(heap_listp))) {
-	printf("Bad prologue header\n");
+  if ((GET_SIZE(HDRP(heap_listp)) != DSIZE) || !GET_ALLOC(HDRP(heap_listp)))
+  {
+    printf("Bad prologue header\n");
   }
   checkblock(heap_listp);
 
-  for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
-    if (verbose)  {
+  for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp))
+  {
+    if (verbose)
+    {
       printblock(bp);
     }
     checkblock(bp);
   }
-     
-  if (verbose) {
+
+  if (verbose)
+  {
     printblock(bp);
   }
 
-  if ((GET_SIZE(HDRP(bp)) != 0) || !(GET_ALLOC(HDRP(bp)))) {
+  if ((GET_SIZE(HDRP(bp)) != 0) || !(GET_ALLOC(HDRP(bp))))
+  {
     printf("Bad epilogue header\n");
   }
 }
 
-static void printblock(void *bp) 
+static void printblock(void *bp)
 {
   uint32_t hsize, halloc, fsize, falloc;
 
   hsize = GET_SIZE(HDRP(bp));
-  halloc = GET_ALLOC(HDRP(bp));  
+  halloc = GET_ALLOC(HDRP(bp));
   fsize = GET_SIZE(FTRP(bp));
-  falloc = GET_ALLOC(FTRP(bp));  
-    
-  if (hsize == 0) {
+  falloc = GET_ALLOC(FTRP(bp));
+
+  if (hsize == 0)
+  {
     printf("%p: EOL\n", bp);
     return;
   }
 
   printf("%p: header: [%d:%c] footer: [%d:%c]\n",
-	 bp, 
-	 (int) hsize, (halloc ? 'a' : 'f'), 
-	 (int) fsize, (falloc ? 'a' : 'f')); 
+         bp,
+         (int)hsize, (halloc ? 'a' : 'f'),
+         (int)fsize, (falloc ? 'a' : 'f'));
 }
 
-static void checkblock(void *bp) 
+static void checkblock(void *bp)
 {
-  if ((uintptr_t)bp % 8) {
+  if ((uintptr_t)bp % 8)
+  {
     printf("Error: %p is not doubleword aligned\n", bp);
   }
-  if (GET(HDRP(bp)) != GET(FTRP(bp))) {
+  if (GET(HDRP(bp)) != GET(FTRP(bp)))
+  {
     printf("Error: header does not match footer\n");
   }
 }
-
