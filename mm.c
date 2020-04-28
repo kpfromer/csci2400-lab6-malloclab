@@ -132,6 +132,8 @@ static inline void *PREVIOUS_BLOCK(void *bp)
 
 static char *heap_listp; /* pointer to first block */
 
+static char *next_fit_pointer;
+
 //
 // function prototypes for internal helper routines
 //
@@ -155,6 +157,8 @@ int mm_init(void)
   PUT(heap_listp + DSIZE, PACK(OVERHEAD, 1));  // prologue footer
   PUT(heap_listp + WSIZE + DSIZE, PACK(0, 1)); // epilogue header
   heap_listp += DSIZE;
+
+  next_fit_pointer = heap_listp;
 
   // Extend the empty heap with a free block of CHUNKSIZE bytes
   if (extend_heap(CHUNKSIZE / WSIZE) == NULL)
@@ -190,16 +194,33 @@ static void *extend_heap(uint32_t words)
 // find_fit - Find a fit for a block with asize bytes
 //
 
-// todo: from book
+// todo: from book FAILS expr, cp-decl-bal, infinite loop on CCCP
+// ^^ 50832:54903 overlap 54088:58159
 static void *find_fit(uint32_t asize)
 {
-  // first fit
-  void *bp;
-  for (bp = heap_listp; GET_SIZE(HEADER(bp)) > 0; bp = NEXT_BLOCK(bp))
+  // next fit
+  void *bp = next_fit_pointer;
+  do
   {
     if (!GET_ALLOC(HEADER(bp)) && (asize <= GET_SIZE(HEADER(bp))))
+    {
+      // printf("Done");
+      next_fit_pointer = bp;
       return bp;
-  }
+    }
+    bp = NEXT_BLOCK(bp);
+    if (GET_SIZE(HEADER(bp)) <= 0)
+    {
+      // printf("Loop");
+      bp = heap_listp;
+    }
+  } while (bp != next_fit_pointer);
+  // printf("Done");
+  // for (bp = heap_listp; GET_SIZE(HEADER(bp)) > 0; bp = NEXT_BLOCK(bp))
+  // {
+  //   if (!GET_ALLOC(HEADER(bp)) && (asize <= GET_SIZE(HEADER(bp))))
+  //     return bp;
+  // }
   return NULL; // no fit
 }
 
@@ -233,13 +254,21 @@ static void *coalesce(void *bp)
     size += GET_SIZE(HEADER(NEXT_BLOCK(bp)));
     PUT(HEADER(bp), PACK(size, 0));
     PUT(FOOTER(bp), PACK(size, 0));
+    // if next fit is pointing to middle of coalesced block change to point to
+    // new block
+    if (HEADER(bp) < next_fit_pointer && next_fit_pointer < FOOTER(NEXT_BLOCK(bp)))
+      next_fit_pointer = bp;
     return bp;
   }
-  else if (!previousAllocation && nextAllocation) // bad code
+  else if (!previousAllocation && nextAllocation)
   {
     size += GET_SIZE(HEADER(PREVIOUS_BLOCK(bp)));
     PUT(FOOTER(bp), PACK(size, 0));
     PUT(HEADER(PREVIOUS_BLOCK(bp)), PACK(size, 0));
+    // if next fit is pointing to middle of coalesced block change to point to
+    // new block
+    if (HEADER(PREVIOUS_BLOCK(bp)) < next_fit_pointer && next_fit_pointer < FOOTER(bp))
+      next_fit_pointer = PREVIOUS_BLOCK(bp);
     return PREVIOUS_BLOCK(bp);
   }
   else
@@ -247,6 +276,10 @@ static void *coalesce(void *bp)
     size += GET_SIZE(HEADER(PREVIOUS_BLOCK(bp))) + GET_SIZE(FOOTER(NEXT_BLOCK(bp)));
     PUT(HEADER(PREVIOUS_BLOCK(bp)), PACK(size, 0));
     PUT(FOOTER(NEXT_BLOCK(bp)), PACK(size, 0));
+    // if next fit is pointing to middle of coalesced block change to point to
+    // new block
+    if (HEADER(PREVIOUS_BLOCK(bp)) < next_fit_pointer && next_fit_pointer < FOOTER(NEXT_BLOCK(bp)))
+      next_fit_pointer = PREVIOUS_BLOCK(bp);
     return PREVIOUS_BLOCK(bp);
   }
 }
