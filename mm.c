@@ -30,13 +30,15 @@
 #include "mm.h"
 #include "memlib.h"
 
+// dyanmic memory - 13:33
+
 /*********************************************************
  * NOTE TO STUDENTS: Before you do anything else, please
  * provide your team information in the following struct.
  ********************************************************/
 team_t team = {
     /* Team name */
-    "",
+    "PT",
     /* First member's full name */
     "Kyle Pfromer",
     /* First member's email address */
@@ -99,25 +101,25 @@ static inline int GET_ALLOC(void *p)
 //
 // Given block ptr bp, compute address of its header and footer
 //
-static inline void *HDRP(void *bp)
+static inline void *HEADER(void *bp)
 {
 
   return ((char *)bp) - WSIZE;
 }
-static inline void *FTRP(void *bp)
+static inline void *FOOTER(void *bp)
 {
-  return ((char *)(bp) + GET_SIZE(HDRP(bp)) - DSIZE);
+  return ((char *)(bp) + GET_SIZE(HEADER(bp)) - DSIZE);
 }
 
 //
 // Given block ptr bp, compute address of next and previous blocks
 //
-static inline void *NEXT_BLKP(void *bp)
+static inline void *NEXT_BLOCK(void *bp)
 {
   return ((char *)(bp) + GET_SIZE(((char *)(bp)-WSIZE)));
 }
 
-static inline void *PREV_BLKP(void *bp)
+static inline void *PREVIOUS_BLOCK(void *bp)
 {
   return ((char *)(bp)-GET_SIZE(((char *)(bp)-DSIZE)));
 }
@@ -147,6 +149,7 @@ int mm_init(void)
   //
   // You need to provide this
   //
+  mem_init();
   return 0;
 }
 
@@ -155,9 +158,7 @@ int mm_init(void)
 //
 static void *extend_heap(uint32_t words)
 {
-  //
-  // You need to provide this
-  //
+  mem_sbrk((int)words);
   return NULL;
 }
 
@@ -168,7 +169,16 @@ static void *extend_heap(uint32_t words)
 //
 static void *find_fit(uint32_t asize)
 {
-  return NULL; /* no fit */
+  // dynamic memory - implicit allocator - 7:15
+  void *p = mem_heap_lo();
+  // first fit
+  while ((p < mem_heap_hi()) && (GET_ALLOC(p) || GET_SIZE(p) < asize))
+  {
+    p = NEXT_BLOCK(p);
+  }
+  if (NEXT_BLOCK(p) > mem_heap_hi())
+    return NULL;
+  return p;
 }
 
 //
@@ -176,9 +186,13 @@ static void *find_fit(uint32_t asize)
 //
 void mm_free(void *bp)
 {
-  //
-  // You need to provide this
-  //
+  // get back to header from payload pointer
+  bp = HEADER(bp);
+  // dynamic memory 9:24
+  // set to not allocated
+  *(int *)bp = *(int *)bp & -2;
+  // TODO: check if allocated (if not error)
+  coalesce(bp);
 }
 
 //
@@ -186,6 +200,27 @@ void mm_free(void *bp)
 //
 static void *coalesce(void *bp)
 {
+  char *start = bp; //Assumes bp is a header pointer, not a payload pointer
+  uint32_t size = GET_SIZE(bp);
+  void *previous = PREVIOUS_BLOCK(bp);
+  if (previous >= mem_heap_lo() && GET_ALLOC(previous) == 0)
+  {
+    start = ((char *)previous) + WSIZE;
+    size += GET_SIZE(previous);
+  }
+
+  void *next = NEXT_BLOCK(bp);
+  if (next + GET_SIZE(next) <= mem_heap_hi() && GET_ALLOC(next) == 0)
+  {
+    size += GET_SIZE(next);
+  }
+
+  uint32_t boundary = PACK(size, 0);
+  // update header boundary
+  PUT(start, boundary);
+  // update footer boundary
+  PUT(FOOTER(start + WSIZE), boundary);
+
   return bp;
 }
 
@@ -194,10 +229,30 @@ static void *coalesce(void *bp)
 //
 void *mm_malloc(uint32_t size)
 {
-  //
-  // You need to provide this
-  //
-  return NULL;
+  // find the fit
+  void *p = find_fit(size);
+  if (p == NULL)
+  {
+    return NULL;
+  }
+  int pSize = GET_SIZE(p);
+  PUT(p, PACK(size, 1));
+  //footer
+  // TODO: Issue with adding to pointer?
+  PUT(p + size, PACK(size, 1));
+  // edge case for size is perfect match
+  if (size == pSize)
+  {
+    return p;
+  }
+  // create block after if size is not padded
+  void *empty = NEXT_BLOCK(p);
+  // header for empty space
+  PUT(empty, PACK(pSize - size, 0));
+  // footer for empty space
+  PUT(p + pSize, PACK(pSize - size, 0));
+  // TODO: alignment?
+  return p;
 }
 
 //
@@ -225,7 +280,7 @@ void *mm_realloc(void *ptr, uint32_t size)
     printf("ERROR: mm_malloc failed in mm_realloc\n");
     exit(1);
   }
-  copySize = GET_SIZE(HDRP(ptr));
+  copySize = GET_SIZE(HEADER(ptr));
   if (size < copySize)
   {
     copySize = size;
@@ -252,13 +307,13 @@ void mm_checkheap(int verbose)
     printf("Heap (%p):\n", heap_listp);
   }
 
-  if ((GET_SIZE(HDRP(heap_listp)) != DSIZE) || !GET_ALLOC(HDRP(heap_listp)))
+  if ((GET_SIZE(HEADER(heap_listp)) != DSIZE) || !GET_ALLOC(HEADER(heap_listp)))
   {
     printf("Bad prologue header\n");
   }
   checkblock(heap_listp);
 
-  for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp))
+  for (bp = heap_listp; GET_SIZE(HEADER(bp)) > 0; bp = NEXT_BLOCK(bp))
   {
     if (verbose)
     {
@@ -272,7 +327,7 @@ void mm_checkheap(int verbose)
     printblock(bp);
   }
 
-  if ((GET_SIZE(HDRP(bp)) != 0) || !(GET_ALLOC(HDRP(bp))))
+  if ((GET_SIZE(HEADER(bp)) != 0) || !(GET_ALLOC(HEADER(bp))))
   {
     printf("Bad epilogue header\n");
   }
@@ -282,10 +337,10 @@ static void printblock(void *bp)
 {
   uint32_t hsize, halloc, fsize, falloc;
 
-  hsize = GET_SIZE(HDRP(bp));
-  halloc = GET_ALLOC(HDRP(bp));
-  fsize = GET_SIZE(FTRP(bp));
-  falloc = GET_ALLOC(FTRP(bp));
+  hsize = GET_SIZE(HEADER(bp));
+  halloc = GET_ALLOC(HEADER(bp));
+  fsize = GET_SIZE(FOOTER(bp));
+  falloc = GET_ALLOC(FOOTER(bp));
 
   if (hsize == 0)
   {
@@ -305,7 +360,7 @@ static void checkblock(void *bp)
   {
     printf("Error: %p is not doubleword aligned\n", bp);
   }
-  if (GET(HDRP(bp)) != GET(FTRP(bp)))
+  if (GET(HEADER(bp)) != GET(FOOTER(bp)))
   {
     printf("Error: header does not match footer\n");
   }
