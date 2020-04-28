@@ -1,20 +1,20 @@
-/* 
- * mm-implicit.c -  Simple allocator based on implicit free lists, 
- *                  first fit placement, and boundary tag coalescing. 
+/*
+ * mm-implicit.c -  Simple allocator based on implicit free lists,
+ *                  first fit placement, and boundary tag coalescing.
  *
  * Each block has header and footer of the form:
- * 
- *      31                     3  2  1  0 
+ *
+ *      31                     3  2  1  0
  *      -----------------------------------
  *     | s  s  s  s  ... s  s  s  0  0  a/f
- *      ----------------------------------- 
- * 
- * where s are the meaningful size bits and a/f is set 
+ *      -----------------------------------
+ *
+ * where s are the meaningful size bits and a/f is set
  * iff the block is allocated. The list has the following form:
  *
  * begin                                                          end
- * heap                                                           heap  
- *  -----------------------------------------------------------------   
+ * heap                                                           heap
+ *  -----------------------------------------------------------------
  * |  pad   | hdr(8:a) | ftr(8:a) | zero or more usr blks | hdr(8:a) |
  *  -----------------------------------------------------------------
  *          |       prologue      |                       | epilogue |
@@ -60,6 +60,7 @@ team_t team = {
 #define DSIZE 8             /* doubleword size (bytes) */
 #define CHUNKSIZE (1 << 12) /* initial heap size (bytes) */
 #define OVERHEAD 8          /* overhead of header and footer (bytes) */
+void mm_checkheap(int);
 
 static inline int MAX(int x, int y)
 {
@@ -146,10 +147,18 @@ static void checkblock(void *bp);
 //
 int mm_init(void)
 {
-  //
-  // You need to provide this
-  //
-  mem_init();
+  // Create the initial empty heap
+  if ((heap_listp = mem_sbrk(4 * WSIZE)) == (void *)-1)
+    return -1;
+  PUT(heap_listp, 0);                          // alignment padding
+  PUT(heap_listp + WSIZE, PACK(OVERHEAD, 1));  // prologue header
+  PUT(heap_listp + DSIZE, PACK(OVERHEAD, 1));  // prologue footer
+  PUT(heap_listp + WSIZE + DSIZE, PACK(0, 1)); // epilogue header
+  heap_listp += DSIZE;
+
+  // Extend the empty heap with a free block of CHUNKSIZE bytes
+  if (extend_heap(CHUNKSIZE / WSIZE) == NULL)
+    return -1;
   return 0;
 }
 
@@ -158,8 +167,21 @@ int mm_init(void)
 //
 static void *extend_heap(uint32_t words)
 {
-  mem_sbrk((int)words);
-  return NULL;
+  char *bp;
+  size_t size;
+
+  // Allocate an even number of words to maintain alignment
+  size = (words % 2) ? (words + 1) * WSIZE : words * WSIZE;
+  if ((long)(bp = mem_sbrk(size)) == -1)
+    return NULL;
+
+  // Initialize free block header/footer and the epilogue header
+  PUT(HEADER(bp), PACK(size, 0));          // free block header
+  PUT(FOOTER(bp), PACK(size, 0));          // free block footer
+  PUT(HEADER(NEXT_BLOCK(bp)), PACK(0, 1)); // new epilogue header
+
+  // coalesce if the previous block was free
+  return coalesce(bp);
 }
 
 //
@@ -167,18 +189,18 @@ static void *extend_heap(uint32_t words)
 //
 // find_fit - Find a fit for a block with asize bytes
 //
+
+// todo: from book
 static void *find_fit(uint32_t asize)
 {
-  // dynamic memory - implicit allocator - 7:15
-  void *p = mem_heap_lo();
   // first fit
-  while ((p < mem_heap_hi()) && (GET_ALLOC(p) || GET_SIZE(p) < asize))
+  void *bp;
+  for (bp = heap_listp; GET_SIZE(HEADER(bp)) > 0; bp = NEXT_BLOCK(bp))
   {
-    p = NEXT_BLOCK(p);
+    if (!GET_ALLOC(HEADER(bp)) && (asize <= GET_SIZE(HEADER(bp))))
+      return bp;
   }
-  if (NEXT_BLOCK(p) > mem_heap_hi())
-    return NULL;
-  return p;
+  return NULL; // no fit
 }
 
 //
@@ -186,12 +208,10 @@ static void *find_fit(uint32_t asize)
 //
 void mm_free(void *bp)
 {
-  // get back to header from payload pointer
-  bp = HEADER(bp);
-  // dynamic memory 9:24
-  // set to not allocated
-  *(int *)bp = *(int *)bp & -2;
-  // TODO: check if allocated (if not error)
+  size_t size = GET_SIZE(HEADER(bp));
+
+  PUT(HEADER(bp), PACK(size, 0));
+  PUT(FOOTER(bp), PACK(size, 0));
   coalesce(bp);
 }
 
@@ -200,28 +220,35 @@ void mm_free(void *bp)
 //
 static void *coalesce(void *bp)
 {
-  char *start = bp; //Assumes bp is a header pointer, not a payload pointer
-  uint32_t size = GET_SIZE(bp);
-  void *previous = PREVIOUS_BLOCK(bp);
-  if (previous >= mem_heap_lo() && GET_ALLOC(previous) == 0)
+  size_t previousAllocation = GET_ALLOC(FOOTER(PREVIOUS_BLOCK(bp)));
+  size_t nextAllocation = GET_ALLOC(HEADER(NEXT_BLOCK(bp)));
+  size_t size = GET_SIZE(HEADER(bp));
+
+  if (previousAllocation && nextAllocation)
   {
-    start = ((char *)previous) + WSIZE;
-    size += GET_SIZE(previous);
+    return bp;
   }
-
-  void *next = NEXT_BLOCK(bp);
-  if (next + GET_SIZE(next) <= mem_heap_hi() && GET_ALLOC(next) == 0)
+  else if (previousAllocation && !nextAllocation)
   {
-    size += GET_SIZE(next);
+    size += GET_SIZE(HEADER(NEXT_BLOCK(bp)));
+    PUT(HEADER(bp), PACK(size, 0));
+    PUT(FOOTER(bp), PACK(size, 0));
+    return bp;
   }
-
-  uint32_t boundary = PACK(size, 0);
-  // update header boundary
-  PUT(start, boundary);
-  // update footer boundary
-  PUT(FOOTER(start + WSIZE), boundary);
-
-  return bp;
+  else if (!previousAllocation && nextAllocation) // bad code
+  {
+    size += GET_SIZE(HEADER(PREVIOUS_BLOCK(bp)));
+    PUT(FOOTER(bp), PACK(size, 0));
+    PUT(HEADER(PREVIOUS_BLOCK(bp)), PACK(size, 0));
+    return PREVIOUS_BLOCK(bp);
+  }
+  else
+  {
+    size += GET_SIZE(HEADER(PREVIOUS_BLOCK(bp))) + GET_SIZE(FOOTER(NEXT_BLOCK(bp)));
+    PUT(HEADER(PREVIOUS_BLOCK(bp)), PACK(size, 0));
+    PUT(FOOTER(NEXT_BLOCK(bp)), PACK(size, 0));
+    return PREVIOUS_BLOCK(bp);
+  }
 }
 
 //
@@ -229,30 +256,33 @@ static void *coalesce(void *bp)
 //
 void *mm_malloc(uint32_t size)
 {
-  // find the fit
-  void *p = find_fit(size);
-  if (p == NULL)
-  {
+  size_t asize;      /* adjusted block size */
+  size_t extendsize; /* amount to extend heap if no fit */
+  char *bp;
+
+  /* Ignore spurious requests */
+  if (size <= 0)
     return NULL;
-  }
-  int pSize = GET_SIZE(p);
-  PUT(p, PACK(size, 1));
-  //footer
-  // TODO: Issue with adding to pointer?
-  PUT(p + size, PACK(size, 1));
-  // edge case for size is perfect match
-  if (size == pSize)
+
+  /* Adjust block size to include overhead and alignment reqs. */
+  if (size <= DSIZE)
+    asize = DSIZE + OVERHEAD;
+  else
+    asize = DSIZE * ((size + (OVERHEAD) + (DSIZE - 1)) / DSIZE);
+
+  /* Search the free list for a fit */
+  if ((bp = find_fit(asize)) != NULL)
   {
-    return p;
+    place(bp, asize);
+    return bp;
   }
-  // create block after if size is not padded
-  void *empty = NEXT_BLOCK(p);
-  // header for empty space
-  PUT(empty, PACK(pSize - size, 0));
-  // footer for empty space
-  PUT(p + pSize, PACK(pSize - size, 0));
-  // TODO: alignment?
-  return p;
+
+  /* No fit found. Get more memory and place the block */
+  extendsize = MAX(asize, CHUNKSIZE);
+  if ((bp = extend_heap(extendsize / WSIZE)) == NULL)
+    return NULL;
+  place(bp, asize);
+  return bp;
 }
 
 //
@@ -264,6 +294,21 @@ void *mm_malloc(uint32_t size)
 //
 static void place(void *bp, uint32_t asize)
 {
+  size_t csize = GET_SIZE(HEADER(bp));
+  // minium block size is 16 bytes (DSIZE + OVERHEAD;)
+  if ((csize - asize) >= (DSIZE + OVERHEAD))
+  {
+    PUT(HEADER(bp), PACK(asize, 1));
+    PUT(FOOTER(bp), PACK(asize, 1));
+    bp = NEXT_BLOCK(bp);
+    PUT(HEADER(bp), PACK(csize - asize, 0));
+    PUT(FOOTER(bp), PACK(csize - asize, 0));
+  }
+  else
+  {
+    PUT(HEADER(bp), PACK(csize, 1));
+    PUT(FOOTER(bp), PACK(csize, 1));
+  }
 }
 
 //
