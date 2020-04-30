@@ -5,7 +5,7 @@ TEAM = xyzzy
 VERSION = 1
 
 CC = cc
-CFLAGS = -Wall -O3 -g
+CFLAGS = -Wall -O0 -g -march=native
 
 OBJS = mdriver.o mm.o memlib.o fsecs.o fcyc.o clock.o ftimer.o
 
