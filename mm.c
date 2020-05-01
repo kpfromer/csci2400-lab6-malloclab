@@ -119,26 +119,6 @@ static inline void SET_BLOCK_DATA(void *bp, uint32_t size, int alloc)
   PUT(FOOTER(bp), boundaryData);
 }
 
-static inline void *GET_NEXT_FREE_BLOCK(void *bp)
-{
-  return (void *)(*(uint64_t *)(bp));
-}
-
-static inline void *GET_PREVIOUS_FREE_BLOCK(void *bp)
-{
-  return (void *)(*(uint64_t *)(bp + DSIZE));
-}
-
-static inline void SET_NEXT_FREE_BLOCK(void *bp, void *next)
-{
-  *((uint64_t *)bp) = (uint64_t)next;
-}
-
-static inline void SET_PREVIOUS_FREE_BLOCK(void *bp, void *prev)
-{
-  *((uint64_t *)(bp + DSIZE)) = (uint64_t)prev;
-}
-
 //
 // Given block ptr bp, compute address of next and previous blocks
 //
@@ -159,8 +139,6 @@ static inline void *PREVIOUS_BLOCK(void *bp)
 
 static char *heap_listp; /* pointer to first block */
 
-static char *first_free = NULL;
-
 static char *next_fit_pointer;
 
 //
@@ -173,59 +151,24 @@ static void *coalesce(void *bp);
 static void printblock(void *bp);
 static void checkblock(void *bp);
 
-static void add_freeblock(void *bp)
-{
-  if (first_free != NULL)
-  {
-    SET_PREVIOUS_FREE_BLOCK(first_free, bp);
-  }
-  if (bp != NULL)
-  {
-    SET_NEXT_FREE_BLOCK(bp, first_free);
-    SET_PREVIOUS_FREE_BLOCK(bp, NULL);
-  }
-  first_free = bp;
-}
-
-static void remove_freeblock(void *bp)
-{
-  if (bp)
-  {
-    if (GET_PREVIOUS_FREE_BLOCK(bp) != NULL) // if not head
-    {
-      SET_NEXT_FREE_BLOCK(GET_PREVIOUS_FREE_BLOCK(bp), GET_NEXT_FREE_BLOCK(bp));
-    }
-    else // else is header
-    {
-      first_free = GET_NEXT_FREE_BLOCK(bp);
-    }
-    if (GET_NEXT_FREE_BLOCK(bp) != NULL) //if there is next block
-    {
-      SET_PREVIOUS_FREE_BLOCK(GET_NEXT_FREE_BLOCK(bp), GET_PREVIOUS_FREE_BLOCK(bp));
-    }
-  }
-}
-
 //
 // mm_init - Initialize the memory manager
 //
 int mm_init(void)
 {
   // Create the initial empty heap
-  if ((heap_listp = mem_sbrk(8 * WSIZE)) == (void *)-1)
+  if ((heap_listp = mem_sbrk(4 * WSIZE)) == (void *)-1)
     return -1;
-
-  PUT(heap_listp, 0); // alignment padding
-
+  PUT(heap_listp, 0);                          // alignment padding
+  PUT(heap_listp + WSIZE, PACK(OVERHEAD, 1));  // prologue header
+  PUT(heap_listp + DSIZE, PACK(OVERHEAD, 1));  // prologue footer
+  PUT(heap_listp + WSIZE + DSIZE, PACK(0, 1)); // epilogue header
   heap_listp += DSIZE;
-  SET_BLOCK_DATA(heap_listp, OVERHEAD + 2 * DSIZE, 1); // prologue
-  PUT(HEADER(NEXT_BLOCK(heap_listp)), PACK(0, 1));     // epilogue header
 
   next_fit_pointer = heap_listp;
 
   // Extend the empty heap with a free block of CHUNKSIZE bytes
-  first_free = extend_heap(CHUNKSIZE / WSIZE);
-  if (first_free == NULL)
+  if (extend_heap(CHUNKSIZE / WSIZE) == NULL)
     return -1;
   return 0;
 }
@@ -240,20 +183,14 @@ static void *extend_heap(uint32_t words)
 
   // Allocate an even number of words to maintain alignment
   size = (words % 2) ? (words + 1) * WSIZE : words * WSIZE;
-  if (size < OVERHEAD + DSIZE * 2)
-  {
-    size = OVERHEAD + DSIZE * 2;
-  }
   if ((long)(bp = mem_sbrk(size)) == -1)
     return NULL;
 
   // Initialize free block header/footer and the epilogue header
   SET_BLOCK_DATA(bp, size, 0);
+  PUT(HEADER(NEXT_BLOCK(bp)), PACK(0, 1)); // new epilogue header
 
-  // New epilogue header
-  PUT(HEADER(NEXT_BLOCK(bp)), PACK(0, 1));
-
-  // Coalesce if the previous block was free
+  // coalesce if the previous block was free
   return coalesce(bp);
 }
 
@@ -304,38 +241,41 @@ static void *coalesce(void *bp)
 
   if (previousAllocation && nextAllocation)
   {
-    // Put bp at the beginning of the free blocks list
-    add_freeblock(bp);
     return bp;
   }
   else if (previousAllocation && !nextAllocation)
   {
-    // Moves pointers from the next block to bp
     size += GET_SIZE(HEADER(NEXT_BLOCK(bp)));
-    remove_freeblock(NEXT_BLOCK(bp));
     SET_BLOCK_DATA(bp, size, 0);
+    // if next fit is pointing to middle of coalesced block change to point to
+    // new block
+    if ((char *)HEADER(bp) < next_fit_pointer && next_fit_pointer < (char *)FOOTER(bp))
+      next_fit_pointer = bp;
+    return bp;
   }
   else if (!previousAllocation && nextAllocation)
   {
     bp = PREVIOUS_BLOCK(bp);
     size += GET_SIZE(HEADER(bp));
-    remove_freeblock(bp);
     SET_BLOCK_DATA(bp, size, 0);
+    // if next fit is pointing to middle of coalesced block change to point to
+    // new block
+    if ((char *)HEADER(bp) < next_fit_pointer && next_fit_pointer < (char *)FOOTER(bp))
+      next_fit_pointer = bp;
+    return bp;
   }
   else
   {
-    size += GET_SIZE(HEADER(PREVIOUS_BLOCK(bp))) + GET_SIZE(HEADER(NEXT_BLOCK(bp)));
-    remove_freeblock(PREVIOUS_BLOCK(bp));
-    remove_freeblock(NEXT_BLOCK(bp));
+    size += GET_SIZE(HEADER(NEXT_BLOCK(bp)));
     bp = PREVIOUS_BLOCK(bp);
+    size += GET_SIZE(HEADER(bp));
     SET_BLOCK_DATA(bp, size, 0);
+    // if next fit is pointing to middle of coalesced block change to point to
+    // new block
+    if (HEADER(bp) < next_fit_pointer && next_fit_pointer < FOOTER(bp))
+      next_fit_pointer = bp;
+    return bp;
   }
-  add_freeblock(bp);
-  // if next fit is pointing to middle of coalesced block change to point to
-  // new block
-  if ((char *)HEADER(bp) < next_fit_pointer && next_fit_pointer < (char *)FOOTER(bp))
-    next_fit_pointer = bp;
-  return bp;
 }
 
 //
@@ -352,21 +292,10 @@ void *mm_malloc(uint32_t size)
     return NULL;
 
   /* Adjust block size to include overhead and alignment reqs. */
-  if (size <= 2 * DSIZE)
-    asize = 2 * DSIZE + OVERHEAD;
+  if (size <= DSIZE)
+    asize = DSIZE + OVERHEAD;
   else
-  {
-    asize = OVERHEAD + ((size + DSIZE * 2 - 1) / (DSIZE * 2)) * (DSIZE * 2);
-    // asize = 2 * DSIZE * ((size + (OVERHEAD) + (2 * DSIZE - 1)) / (2 *
-    // DSIZE));
-
-    // visual representation
-    // asize = size + OVERHEAD;
-    // while (asize % 8 != 0)
-    // {
-    //   asize++;
-    // }
-  }
+    asize = DSIZE * ((size + (OVERHEAD) + (DSIZE - 1)) / DSIZE);
 
   /* Search the free list for a fit */
   if ((bp = find_fit(asize)) != NULL)
@@ -392,22 +321,18 @@ void *mm_malloc(uint32_t size)
 //
 static void place(void *bp, uint32_t asize)
 {
-  //TODO: update pointers to account for allocated blocks and update first_free as necessary
   size_t csize = GET_SIZE(HEADER(bp));
   // minium block size is 16 bytes (DSIZE + OVERHEAD;)
-  if ((csize - asize) >= (2 * DSIZE + OVERHEAD))
+  if ((csize - asize) >= (DSIZE + OVERHEAD))
   {
     SET_BLOCK_DATA(bp, asize, 1);
-    remove_freeblock(bp);
     bp = NEXT_BLOCK(bp);
     SET_BLOCK_DATA(bp, csize - asize, 0);
-    // set bp partition
     coalesce(bp);
   }
   else
   {
     SET_BLOCK_DATA(bp, csize, 1);
-    remove_freeblock(bp);
   }
 }
 
@@ -419,27 +344,42 @@ void *mm_realloc(void *ptr, uint32_t size)
   void *newp;
   uint32_t copySize;
 
+  copySize = GET_SIZE(HEADER(ptr));
+  if (size == copySize)
+  {
+    return ptr;
+  }
+
+  uint32_t asize;
+  if (size <= DSIZE)
+    asize = DSIZE + OVERHEAD;
+  else
+    asize = DSIZE * ((size + (OVERHEAD) + (DSIZE - 1)) / DSIZE);
+
+  if (asize < copySize)
+  {
+    SET_BLOCK_DATA(ptr, asize, 1);
+    SET_BLOCK_DATA(NEXT_BLOCK(ptr), copySize - asize, 0);
+    coalesce(NEXT_BLOCK(ptr));
+    return ptr;
+  }
+  else if (size < copySize)
+  {
+    copySize = size;
+  }
+  else if (GET_ALLOC(HEADER(NEXT_BLOCK(ptr))) == 0 && GET_SIZE(HEADER(NEXT_BLOCK(ptr))) + copySize >= asize)
+  {
+    place(ptr, asize);
+    return ptr;
+  }
+
   newp = mm_malloc(size);
   if (newp == NULL)
   {
     printf("ERROR: mm_malloc failed in mm_realloc\n");
     exit(1);
   }
-  copySize = GET_SIZE(HEADER(ptr));
-  // memset(newp, 0, copySize - DSIZE);
-  if (size < copySize)
-  {
-    copySize = size;
-  }
   memcpy(newp, ptr, copySize);
-  // if (memcmp(newp, ptr, copySize))
-  // {
-  //   printf("BAD!");
-  // }
-  // else
-  // {
-  //   printf("GOOD");
-  // }
   mm_free(ptr);
   return newp;
 }
@@ -461,7 +401,7 @@ void mm_checkheap(int verbose)
     printf("Heap (%p):\n", heap_listp);
   }
 
-  if ((GET_SIZE(HEADER(heap_listp)) != 2 * DSIZE + OVERHEAD) || !GET_ALLOC(HEADER(heap_listp)))
+  if ((GET_SIZE(HEADER(heap_listp)) != DSIZE) || !GET_ALLOC(HEADER(heap_listp)))
   {
     printf("Bad prologue header\n");
   }
