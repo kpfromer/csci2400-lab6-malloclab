@@ -1,11 +1,11 @@
 #
 # Students' Makefile for the Malloc Lab
 #
-TEAM = xyzzy
+TEAM = PT
 VERSION = 1
 
 CC = cc
-CFLAGS = -Wall -O0 -g -march=native
+CFLAGS = -Wall -O3 -g -march=native
 
 OBJS = mdriver.o mm.o memlib.o fsecs.o fcyc.o clock.o ftimer.o
 
