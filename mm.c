@@ -30,8 +30,6 @@
 #include "mm.h"
 #include "memlib.h"
 
-// dyanmic memory - 13:33
-
 /*********************************************************
  * NOTE TO STUDENTS: Before you do anything else, please
  * provide your team information in the following struct.
@@ -247,22 +245,12 @@ static void *coalesce(void *bp)
   {
     size += GET_SIZE(HEADER(NEXT_BLOCK(bp)));
     SET_BLOCK_DATA(bp, size, 0);
-    // if next fit is pointing to middle of coalesced block change to point to
-    // new block
-    if ((char *)HEADER(bp) < next_fit_pointer && next_fit_pointer < (char *)FOOTER(bp))
-      next_fit_pointer = bp;
-    return bp;
   }
   else if (!previousAllocation && nextAllocation)
   {
     bp = PREVIOUS_BLOCK(bp);
     size += GET_SIZE(HEADER(bp));
     SET_BLOCK_DATA(bp, size, 0);
-    // if next fit is pointing to middle of coalesced block change to point to
-    // new block
-    if ((char *)HEADER(bp) < next_fit_pointer && next_fit_pointer < (char *)FOOTER(bp))
-      next_fit_pointer = bp;
-    return bp;
   }
   else
   {
@@ -270,12 +258,12 @@ static void *coalesce(void *bp)
     bp = PREVIOUS_BLOCK(bp);
     size += GET_SIZE(HEADER(bp));
     SET_BLOCK_DATA(bp, size, 0);
-    // if next fit is pointing to middle of coalesced block change to point to
-    // new block
-    if (HEADER(bp) < next_fit_pointer && next_fit_pointer < FOOTER(bp))
-      next_fit_pointer = bp;
-    return bp;
   }
+  // if next fit is pointing to middle of coalesced block change to point to
+  // new block
+  if (HEADER(bp) < next_fit_pointer && next_fit_pointer < FOOTER(bp))
+    next_fit_pointer = bp;
+  return bp;
 }
 
 //
